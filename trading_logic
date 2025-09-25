@@ -1,0 +1,78 @@
+// This is no the entire code but the main logic behind the training
+
+
+// Gathering data from Angelone and using moving average to do backgrounf test on historical data 
+import pandas as pd
+import talib
+
+# Load your data
+data = pd.read_csv("historical_data.csv")  # Replace with your CSV file path
+data['Time Interval'] = pd.to_datetime(data['Time Interval'])  # Convert Time Interval to datetime
+
+# Calculate Moving Averages
+data['MA_20'] = talib.SMA(data['Close Price'], timeperiod=20)
+data['MA_50'] = talib.SMA(data['Close Price'], timeperiod=50)
+
+# Initialize strategy parameters
+initial_capital = 100000
+capital = initial_capital
+position = 0
+buy_price = 0
+highest_price = 0
+trailing_stop = 0
+
+# Function to simulate swing trading with an immediate trailing stop-loss
+def swing_trade_immediate_stop(data, initial_capital):
+    global capital, position, buy_price, highest_price, trailing_stop  # Use global variables to manage state
+
+    for index, row in data.iterrows():
+        current_price = row['Close Price']
+        ma_20 = row['MA_20']
+        ma_50 = row['MA_50']
+        timestamp = row['Time Interval']
+
+        # Buy signal: MA 20 crosses above MA 50
+        if position == 0 and not pd.isna(ma_20) and not pd.isna(ma_50) and ma_20 > ma_50:
+            position = capital // current_price  # Calculate the number of shares
+            buy_price = current_price  # Record the buy price
+            capital -= position * buy_price  # Deduct the cost of shares from the capital
+            highest_price = buy_price  # Initialize the highest price to the buy price
+            trailing_stop = highest_price * (1 - 0.02)  # Set initial trailing stop-loss
+            print(f"Bought at {buy_price:.2f} on {timestamp}, Shares: {position}, Remaining Capital: {capital:.2f}")
+
+        # Sell signal: Triggered by immediate trailing stop-loss or MA 20 crossing below MA 50
+        elif position > 0:
+            # Update the highest price and trailing stop
+            highest_price = max(highest_price, current_price)
+            trailing_stop = highest_price * (1 - 0.02)
+
+            # If the current price drops to or below the trailing stop, sell immediately
+            if current_price <= trailing_stop:
+                sell_price = current_price  # Record the sell price
+                capital += position * sell_price  # Add the proceeds to capital
+                profit_loss = capital - initial_capital  # Calculate profit or loss
+                print(f"Sold at {sell_price:.2f} on {timestamp}, Total Capital: {capital:.2f}, P&L: {profit_loss:.2f}")
+                position = 0  # Reset position to zero (no shares held)
+
+                # Ask the user if they want to continue trading
+                cont = input("Continue trading? (y/n): ").lower()
+                if cont == 'n':
+                    print("Exiting trading session.")
+                    break
+
+            # Sell condition: MA 20 crossing below MA 50
+            elif not pd.isna(ma_20) and not pd.isna(ma_50) and ma_20 < ma_50:
+                sell_price = current_price
+                capital += position * sell_price
+                profit_loss = capital - initial_capital
+                print(f"Sold at {sell_price:.2f} on {timestamp}, Total Capital: {capital:.2f}, P&L: {profit_loss:.2f}")
+                position = 0
+
+                # Ask user if they want to continue trading
+                cont = input("Continue trading? (y/n): ").lower()
+                if cont == 'n':
+                    print("Exiting trading session.")
+                    break
+
+# Run the trading simulation
+swing_trade_immediate_stop(data, initial_capital)
